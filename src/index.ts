@@ -1,20 +1,13 @@
-import { Grid, testTiles } from './lib/grid'
-import { Camera } from './lib/camera'
+import { TileMap } from './lib/tile-map'
+import { KeyboardInput } from './lib/user-input'
+import { Sprite } from './lib/sprite'
 
+declare global {
+  interface Window { tileMap: TileMap }
+}
 
-const GRID_ROWS = 10
-const GRID_COLS = 10
-const GRID_TILE_SIZE = 100
-
-const CAM_WIDTH = 400
-const CAM_HEIGHT = 400
-const CAM_MOVE_VELOCITY = 4
-
-const WORLD_WIDTH = GRID_COLS * GRID_TILE_SIZE
-const WORLD_HEIGHT = GRID_ROWS * GRID_TILE_SIZE
-
-
-
+const CAM_WIDTH = 500
+const CAM_HEIGHT = 500
 const COLORS = [
   'grey',
   'blue',
@@ -30,66 +23,63 @@ document.body.appendChild(canvas)
 
 const ctx = canvas.getContext('2d')
 
-const grid = new Grid(GRID_COLS, GRID_ROWS)
-grid.loadTiles(testTiles)
-const camera = new Camera(CAM_WIDTH, CAM_HEIGHT, WORLD_WIDTH, WORLD_HEIGHT)
+const tileMap = window.tileMap = new TileMap({
+  tileSize: 100,
+  layers: [
+    [
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 1, 1, 1, 1, 1, 1, 0, 0, 0,
+      0, 1, 1, 1, 2, 2, 2, 2, 1, 0,
+      0, 1, 1, 1, 2, 2, 2, 2, 1, 0,
+      0, 1, 1, 1, 2, 2, 2, 2, 1, 0,
+      0, 1, 1, 1, 2, 2, 2, 2, 1, 0,
+      0, 1, 1, 1, 3, 3, 2, 2, 1, 0,
+      0, 1, 1, 3, 3, 3, 2, 2, 1, 0,
+      0, 0, 1, 1, 1, 1, 1, 0, 1, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+  ],
+  nCols: 10,
+  viewport: {
+    x: 50,
+    y: 50,
+    width: CAM_WIDTH,
+    height: CAM_HEIGHT,
+  },
+})
 
-function paint() {
-  ctx.clearRect(camera.x, camera.y, camera.width, camera.height)
-  const startCol = Math.floor(camera.x / GRID_TILE_SIZE)
-  const startRow = Math.floor(camera.y / GRID_TILE_SIZE)
-  const endCol = startCol + (camera.width / GRID_TILE_SIZE)
-  const endRow = startRow + (camera.height / GRID_TILE_SIZE)
-  const offsetX = -camera.x + startCol * GRID_TILE_SIZE
-  const offsetY = -camera.y + startRow * GRID_TILE_SIZE
+const keyboard = new KeyboardInput({
+  ArrowUp: sprite => sprite.accelY(-.5),
+  ArrowLeft: sprite => sprite.accelX(-.5),
+  ArrowRight: sprite => sprite.accelX(.5),
+  ArrowDown: sprite => sprite.accelY(.5),
+}).init()
 
-  for (let c = startCol; c <= endCol; c++) {
-    for (let r = startRow; r <= endRow; r++) {
-      const tileValue = grid.getTile(r, c)
-      const tileX = (c - startCol) * GRID_TILE_SIZE + offsetX
-      const tileY = (r - startRow) * GRID_TILE_SIZE + offsetY
-      ctx.fillStyle = COLORS[tileValue]
-      ctx.fillRect(tileX + 1, tileY + 1, GRID_TILE_SIZE, GRID_TILE_SIZE)
-    }
-  }
+const sprite = new Sprite({ x: 50, y: 50, width: 20, height: 20 })
+
+function translateSpriteToCamera(offsetX: number, offsetY: number) {
+  const x = sprite.x + offsetX
+  const y = sprite.y + offsetY
+  return { x, y, width: sprite.width, height: sprite.height }
 }
 
-const pressedKeys: string[] = []
-
-window.addEventListener('keydown', e => {
-  if (!pressedKeys.includes(e.key)) {
-    pressedKeys.push(e.key)
+function paint() {
+  ctx.clearRect(0, 0, tileMap.camera.width, tileMap.camera.height)
+  const { offsetX, offsetY, tiles } = tileMap.renderViewport()
+  for (let i = 0; i < tiles.length; i++) {
+    const { x, y, layers } = tiles[i]
+    ctx.fillStyle = COLORS[layers[0]]
+    ctx.fillRect(x, y, tileMap.tileSize, tileMap.tileSize)
   }
-})
-
-window.addEventListener('keyup', e => {
-  const idx = pressedKeys.indexOf(e.key)
-  if (idx > -1) {
-    pressedKeys.splice(idx, 1)
-  }
-})
+  ctx.fillStyle = 'black'
+  const { x, y, width, height } = translateSpriteToCamera(offsetX, offsetY)
+  ctx.fillRect(x, y, width, height)
+}
 
 function update() {
-  if (pressedKeys.includes('ArrowUp')) {
-    if (camera.y - CAM_MOVE_VELOCITY >= 0) {
-      camera.y -= CAM_MOVE_VELOCITY
-    }
-  }
-  if (pressedKeys.includes('ArrowDown')) {
-    if (camera.y + CAM_MOVE_VELOCITY <= camera.maxY) {
-      camera.y += CAM_MOVE_VELOCITY
-    }
-  }
-  if (pressedKeys.includes('ArrowLeft')) {
-    if (camera.x - CAM_MOVE_VELOCITY >= 0) {
-      camera.x -= CAM_MOVE_VELOCITY
-    }
-  }
-  if (pressedKeys.includes('ArrowRight')) {
-    if (camera.x + CAM_MOVE_VELOCITY <= camera.maxX) {
-      camera.x += CAM_MOVE_VELOCITY
-    }
-  }
+  keyboard.listen().forEach(command => command(sprite))
+  sprite.updatePosition()
+  tileMap.camera.focusOn(sprite)
 }
 
 (function loop() {
